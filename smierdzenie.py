@@ -1,1 +1,5 @@
 print("maja smierdzi")
+print("ja ci dam kurde")
+print("smierdziel")
+print("smierdzielu")
+print("smierdzielu kurde")
