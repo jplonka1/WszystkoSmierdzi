@@ -1,5 +1,6 @@
-print("maja smierdzi")
-print("ja ci dam kurde")
-print("smierdziel")
-print("smierdzielu")
-print("smierdzielu kurde")
+print("asymilacja smierdzenia")
+def smierdzenie():
+    print("smierdzenie w toku")
+    return "smierdzenie zakończone"
+if __name__ == "__main__":
+    print(smierdzenie())
