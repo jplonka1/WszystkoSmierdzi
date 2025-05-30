@@ -1,4 +1,3 @@
-print("asymilacja smierdzenia")
 def smierdzenie():
     print("smierdzenie w toku")
     return "smierdzenie zakończone"
