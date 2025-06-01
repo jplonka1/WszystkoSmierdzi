@@ -1,0 +1,81 @@
+{
+  "audio": {
+    "sample_rate": 16000,
+    "max_duration": 10.0,
+    "min_duration": 0.5,
+    "n_mels": 128,
+    "n_fft": 2048,
+    "hop_length": 512,
+    "normalize": true
+  },
+  "augmentation": {
+    "enable": true,
+    "noise_prob": 0.5,
+    "noise_level_range": [0.1, 0.5],
+    "gain_range": [0.5, 1.5],
+    "pitch_shift_prob": 0.2,
+    "pitch_shift_range": [-2, 2],
+    "time_mask_prob": 0.3,
+    "time_mask_ratio": 0.1,
+    "freq_mask_prob": 0.3,
+    "freq_mask_ratio": 0.1
+  },
+  "model": {
+    "model_name": "albert-base-v2",
+    "num_labels": 2,
+    "hidden_size": 768,
+    "num_attention_heads": 12,
+    "num_hidden_layers": 12,
+    "intermediate_size": 3072,
+    "hidden_dropout_prob": 0.1,
+    "attention_probs_dropout_prob": 0.1,
+    "max_position_embeddings": 512,
+    "layer_norm_eps": 1e-12,
+    "classifier_dropout_prob": 0.1,
+    "audio_feature_dim": 128,
+    "temporal_pooling": "attention",
+    "freeze_base_model": false
+  },
+  "training": {
+    "output_dir": "./models/audio_albert_classifier",
+    "num_train_epochs": 20,
+    "per_device_train_batch_size": 16,
+    "per_device_eval_batch_size": 32,
+    "gradient_accumulation_steps": 2,
+    "learning_rate": 2e-5,
+    "weight_decay": 0.01,
+    "warmup_ratio": 0.1,
+    "lr_scheduler_type": "cosine",
+    "evaluation_strategy": "epoch",
+    "save_strategy": "epoch",
+    "save_total_limit": 3,
+    "load_best_model_at_end": true,
+    "metric_for_best_model": "f1",
+    "greater_is_better": true,
+    "logging_steps": 50,
+    "logging_strategy": "steps",
+    "report_to": null,
+    "early_stopping_patience": 5,
+    "early_stopping_threshold": 0.001,
+    "fp16": true,
+    "dataloader_num_workers": 4,
+    "seed": 42
+  },
+  "data": {
+    "event_dir": "dataset_current/training",
+    "noise_dir": "Background",
+    "validation_split": 0.2,
+    "test_split": 0.1,
+    "cache_dir": "./cache",
+    "max_samples_per_class": null,
+    "use_balanced_sampling": true,
+    "label2id": {
+      "no_event": 0,
+      "event": 1
+    },
+    "id2label": {
+      "0": "no_event",
+      "1": "event"
+    }
+  }
+}
