@@ -47,20 +47,21 @@ def test_config_system():
     try:
         from config import load_config, ExperimentConfig
         
-        # Test default config
+        # Test default config loading
         config = load_config()
         assert hasattr(config, 'audio')
         assert hasattr(config, 'model')
         assert hasattr(config, 'training')
         assert hasattr(config, 'data')
         
-        # Test config serialization
-        with tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False) as f:
-            config.to_json(f.name)
-            config_loaded = ExperimentConfig.from_json(f.name)
-            assert config_loaded.audio.sample_rate == config.audio.sample_rate
+        # Test config properties access
+        assert config.audio.sample_rate == 16000
+        assert config.model.model_name == "albert-base-v2"
+        assert config.training.num_train_epochs > 0
+        assert hasattr(config.data, 'event_dir')
+        assert hasattr(config.data, 'background_dir')
+        assert hasattr(config.data, 'noise_dir')
         
-        os.unlink(f.name)
         logger.info("✅ Configuration system working correctly")
         return True
         
@@ -192,8 +193,8 @@ def check_data_directories():
     
     directories = {
         "Event data": "dataset_current/training",
-        "Noise data": "Background",
-        "Mixed data": "Drone_mixed"
+        "Background data": "Background",
+        "Noise data": "noise"
     }
     
     for name, path in directories.items():

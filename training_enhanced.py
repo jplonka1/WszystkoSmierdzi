@@ -40,7 +40,7 @@ from transformers import (
 # Local imports
 from config import load_config, ExperimentConfig
 from model import create_model
-from dataset import load_dataset_from_directories, collate_fn, BalancedAudioDataset
+from dataset import load_dataset_from_directories, collate_fn
 from utils import (
     compute_metrics, 
     evaluate_model_comprehensive,
@@ -54,7 +54,7 @@ warnings.filterwarnings("ignore")
 logger = logging.getLogger(__name__)
 
 
-class MetricsCallback(TrainerCallback):
+class MetricsCallback(TrainerCallback):# idk whats that fro yet, yet to do even chatgpt of it
     """Custom callback to track training metrics."""
     
     def __init__(self):
@@ -68,7 +68,7 @@ class MetricsCallback(TrainerCallback):
             'roc_auc': []
         }
     
-    def on_log(self, args, state, control, model=None, logs=None, **kwargs):
+    def on_log(self, args, state, control, model=None, logs=None, **kwargs):# idk whats that fro yet, yet to do even chatgpt of it
         if logs:
             if 'train_loss' in logs:
                 self.train_losses.append(logs['train_loss'])
@@ -81,7 +81,7 @@ class MetricsCallback(TrainerCallback):
                     self.val_metrics[metric_name].append(logs[f'eval_{metric_name}'])
 
 
-def setup_directories(config: ExperimentConfig) -> Dict[str, str]:
+def setup_directories(config: ExperimentConfig) -> Dict[str, str]:#should be ok
     """Setup output directories."""
     
     output_dir = config.training.output_dir
@@ -98,6 +98,53 @@ def setup_directories(config: ExperimentConfig) -> Dict[str, str]:
     
     return dirs
 
+def predict_audio_event(
+    audio_path: str,
+    model_path: str,
+    config_path: Optional[str] = None
+) -> Dict[str, Any]:
+    """Predict audio event for a single file."""
+    
+    # Load config
+    if config_path:
+        config = load_config(config_path)
+    else:
+        config = load_config()
+    
+    # Load model
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    model = create_model(config)
+    model.load_state_dict(torch.load(os.path.join(model_path, "pytorch_model.bin"), map_location=device))
+    model.to(device)
+    model.eval()
+    
+    # Create temporary dataset for single file #TODO: completely redo the next lines
+    from dataset import AudioDataset
+    temp_dataset = AudioDataset([audio_path], [0], config, is_training=False)
+    
+    # Get features
+    sample = temp_dataset[0]
+    input_values = sample['input_values'].unsqueeze(0).to(device)
+    
+    # Predict #up to here, and TODO evaluate whats below cause I didnt yet
+    with torch.no_grad():
+        outputs = model(input_values=input_values)
+        logits = outputs.logits
+        probabilities = torch.softmax(logits, dim=-1)
+        predicted_class = torch.argmax(logits, dim=-1).item()
+    
+    result = {
+        'predicted_class': predicted_class,
+        'predicted_label': config.data.id2label[predicted_class],
+        'probabilities': {
+            config.data.id2label[i]: float(prob) 
+            for i, prob in enumerate(probabilities[0])
+        },
+        'confidence': float(probabilities[0].max())
+    }
+    
+    return result
+
 
 def create_trainer(
     model,
@@ -109,6 +156,7 @@ def create_trainer(
     """Create and configure the Trainer."""
     
     # Training arguments
+    print("YO")
     training_args = TrainingArguments(
         output_dir=output_dirs['models'],
         num_train_epochs=config.training.num_train_epochs,
@@ -121,7 +169,7 @@ def create_trainer(
         lr_scheduler_type=config.training.lr_scheduler_type,
         
         # Evaluation
-        evaluation_strategy=config.training.evaluation_strategy,
+        eval_strategy=config.training.evaluation_strategy,
         eval_steps=None,  # Evaluate every epoch
         
         # Saving
@@ -147,7 +195,7 @@ def create_trainer(
         remove_unused_columns=False,
         push_to_hub=False,
     )
-    
+    print("YoO")
     # Create trainer
     trainer = Trainer(
         model=model,
@@ -161,7 +209,7 @@ def create_trainer(
     return trainer
 
 
-def train_model(config: ExperimentConfig, use_wandb: bool = False) -> Dict[str, Any]:
+def train_model(config: ExperimentConfig) -> Dict[str, Any]:
     """Main training function."""
     
     # Setup
@@ -175,32 +223,10 @@ def train_model(config: ExperimentConfig, use_wandb: bool = False) -> Dict[str, 
     # Setup directories
     output_dirs = setup_directories(config)
     
-    # Initialize Weights & Biases if requested
-    if use_wandb:
-        try:
-            import wandb
-            wandb.init(
-                project="audio-event-detection",
-                config=config.__dict__,
-                name=f"albert-audio-{config.training.learning_rate}"
-            )
-        except ImportError:
-            logger.warning("wandb not available, skipping experiment tracking")
-            use_wandb = False
-    
     # Load datasets
     logger.info("Loading datasets...")
     train_dataset, val_dataset, test_dataset = load_dataset_from_directories(config)
-    
-    # Use balanced dataset for training if specified
-    if hasattr(config.data, 'use_balanced_sampling') and config.data.use_balanced_sampling:
-        logger.info("Using balanced sampling for training")
-        train_dataset = BalancedAudioDataset(
-            train_dataset.audio_paths,
-            train_dataset.labels,
-            config,
-            is_training=True
-        )
+
     
     logger.info(f"Dataset sizes - Train: {len(train_dataset)}, Val: {len(val_dataset)}, Test: {len(test_dataset)}")
     
@@ -209,13 +235,14 @@ def train_model(config: ExperimentConfig, use_wandb: bool = False) -> Dict[str, 
     model = create_model(config)
     
     # Count parameters
-    total_params = sum(p.numel() for p in model.parameters())
-    trainable_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
+    total_params = sum(p.numel() for p in model.parameters())#numel?xd
+    trainable_params = sum(p.numel() for p in model.parameters() if p.requires_grad)#smart i guess
     logger.info(f"Model parameters - Total: {total_params:,}, Trainable: {trainable_params:,}")
     
     # Create trainer
+    print("yo")
     trainer = create_trainer(model, train_dataset, val_dataset, config, output_dirs)
-    
+    print("YOOOOOOOOOO")
     # Add custom callback
     metrics_callback = MetricsCallback()
     trainer.add_callback(metrics_callback)
@@ -259,9 +286,6 @@ def train_model(config: ExperimentConfig, use_wandb: bool = False) -> Dict[str, 
                 save_path=plot_path
             )
         
-        # Save config
-        config.to_json(os.path.join(output_dirs['output'], 'config.json'))
-        
         results = {
             'train_result': train_result,
             'test_metrics': test_metrics,
@@ -272,66 +296,11 @@ def train_model(config: ExperimentConfig, use_wandb: bool = False) -> Dict[str, 
         logger.info("Training completed successfully!")
         logger.info(f"Final test metrics: {test_metrics}")
         
-        if use_wandb:
-            wandb.log({"test_" + k: v for k, v in test_metrics.items()})
-            wandb.finish()
-        
         return results
         
     except Exception as e:
         logger.error(f"Training failed: {e}")
-        if use_wandb:
-            wandb.finish()
         raise
-
-
-def predict_audio_event(
-    audio_path: str,
-    model_path: str,
-    config_path: Optional[str] = None
-) -> Dict[str, Any]:
-    """Predict audio event for a single file."""
-    
-    # Load config
-    if config_path:
-        config = load_config(config_path)
-    else:
-        config = load_config()
-    
-    # Load model
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    model = create_model(config)
-    model.load_state_dict(torch.load(os.path.join(model_path, "pytorch_model.bin"), map_location=device))
-    model.to(device)
-    model.eval()
-    
-    # Create temporary dataset for single file
-    from dataset import AudioDataset
-    temp_dataset = AudioDataset([audio_path], [0], config, is_training=False)
-    
-    # Get features
-    sample = temp_dataset[0]
-    input_values = sample['input_values'].unsqueeze(0).to(device)
-    
-    # Predict
-    with torch.no_grad():
-        outputs = model(input_values=input_values)
-        logits = outputs.logits
-        probabilities = torch.softmax(logits, dim=-1)
-        predicted_class = torch.argmax(logits, dim=-1).item()
-    
-    result = {
-        'predicted_class': predicted_class,
-        'predicted_label': config.data.id2label[predicted_class],
-        'probabilities': {
-            config.data.id2label[i]: float(prob) 
-            for i, prob in enumerate(probabilities[0])
-        },
-        'confidence': float(probabilities[0].max())
-    }
-    
-    return result
-
 
 def main():
     """Main entry point."""
@@ -341,7 +310,6 @@ def main():
     parser.add_argument("--mode", choices=["train", "predict"], default="train", help="Mode: train or predict")
     parser.add_argument("--model-path", type=str, help="Path to trained model (for prediction)")
     parser.add_argument("--audio-path", type=str, help="Path to audio file (for prediction)")
-    parser.add_argument("--wandb", action="store_true", help="Use Weights & Biases for tracking")
     parser.add_argument("--event-dir", type=str, help="Directory containing event audio files")
     parser.add_argument("--noise-dir", type=str, help="Directory containing noise audio files")
     
@@ -364,9 +332,12 @@ def main():
         if not os.path.exists(config.data.noise_dir):
             logger.error(f"Noise directory not found: {config.data.noise_dir}")
             sys.exit(1)
+        if not os.path.exists(config.data.background_dir):
+            logger.error(f"Event directory not found: {config.data.background_dir}")
+            sys.exit(1)
         
         # Train model
-        results = train_model(config, use_wandb=args.wandb)
+        results = train_model(config)
         print(f"Training completed. Results saved to: {results['output_dir']}")
         
     elif args.mode == "predict":

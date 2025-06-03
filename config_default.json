@@ -1,10 +1,10 @@
 {
   "audio": {
     "sample_rate": 16000,
-    "max_duration": 10.0,
-    "min_duration": 0.5,
+    "max_duration": 1.024,
+    "min_duration": 0.649938,
     "n_mels": 128,
-    "n_fft": 2048,
+    "n_fft": 1024,
     "hop_length": 512,
     "normalize": true
   },
@@ -24,8 +24,8 @@
     "model_name": "albert-base-v2",
     "num_labels": 2,
     "hidden_size": 768,
-    "num_attention_heads": 12,
-    "num_hidden_layers": 12,
+    "num_attention_heads": 16,
+    "num_hidden_layers": 4,
     "intermediate_size": 3072,
     "hidden_dropout_prob": 0.1,
     "attention_probs_dropout_prob": 0.1,
@@ -62,12 +62,12 @@
     "seed": 42
   },
   "data": {
-    "event_dir": "dataset_current/training",
-    "noise_dir": "Background",
+    "event_dir": "dataset_preliminary/",
+    "background_dir": "Background/",
+    "noise_dir": "noise/unknown/",
     "validation_split": 0.2,
-    "test_split": 0.1,
+    "test_split": 0.01,
     "cache_dir": "./cache",
-    "max_samples_per_class": null,
     "use_balanced_sampling": true,
     "label2id": {
       "no_event": 0,

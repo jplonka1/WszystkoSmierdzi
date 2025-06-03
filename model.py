@@ -7,10 +7,10 @@ import librosa
 import numpy as np
 
 
-class AudioFeatureExtractor(nn.Module):
+class AudioFeatureExtractor(nn.Module):#TODO: Assess whether this is even going to be used, or somewhere else 
     """Extract mel-spectrogram features from audio for ALBERT processing."""
     
-    def __init__(self, sample_rate: int = 16000, n_mels: int = 128, n_fft: int = 2048, hop_length: int = 512):
+    def __init__(self, sample_rate: int = 16000, n_mels: int = 128, n_fft: int = 800, hop_length: int = 512):#TODO: check if these values are loaded from config, if not then I'd say lets completely remove this function and start from sratch just after data augmentation maybe
         super().__init__()
         self.sample_rate = sample_rate
         self.n_mels = n_mels
@@ -20,7 +20,7 @@ class AudioFeatureExtractor(nn.Module):
             sample_rate=sample_rate,
             n_fft=n_fft,
             hop_length=hop_length,
-            n_mels=n_mels,
+            n_mels=n_mels,# paper sugeruje 128
             normalized=True
         )
         
@@ -41,6 +41,7 @@ class AudioFeatureExtractor(nn.Module):
         if audio.dim() == 1:
             audio = audio.unsqueeze(0)
         elif audio.dim() == 3:
+            print("IDK CO TO ZNACZYY, DEBUG 1")
             audio = audio.squeeze(1)  # Remove channel dimension if present
             
         # Extract mel-spectrogram
@@ -91,13 +92,13 @@ class AudioALBERTClassifier(nn.Module):
         )
         
         # Freeze ALBERT if specified
-        if freeze_albert:
+        if freeze_albert:#idk co to
             for param in self.albert.albert.parameters():
                 param.requires_grad = False
         
         # Projection layer to map mel features to ALBERT input dimension
         self.feature_projection = nn.Linear(n_mels, self.albert_config.embedding_size)
-        self.dropout = nn.Dropout(0.1)
+        self.dropout = nn.Dropout(0.1)# SUGERUJE ZEBY TO WYLACZYC, ROBIMY EXTRA DATA AUGMENTATION ETC I INNE TO PO CO NAM COS TAKIEGO? Ale trzeba zresearchowac czy tak czy siak powinno si eto zostawic
         
         # Temporal pooling for variable-length sequences
         self.temporal_pooling = nn.AdaptiveAvgPool1d(max_length)
@@ -131,6 +132,7 @@ class AudioALBERTClassifier(nn.Module):
         # Apply temporal pooling to ensure consistent sequence length
         if mel_features.size(1) > self.max_length:
             # Pool to max_length if sequence is too long
+            print("SHOULD NOT HAPPEN, DEBUG 2. as we prep the input before hand to have at most max_length (to be added)")
             mel_features = mel_features.transpose(1, 2)  # (batch, n_mels, time)
             mel_features = self.temporal_pooling(mel_features)  # (batch, n_mels, max_length)
             mel_features = mel_features.transpose(1, 2)  # (batch, max_length, n_mels)
@@ -146,6 +148,7 @@ class AudioALBERTClassifier(nn.Module):
         
         # Create attention mask if not provided
         if attention_mask is None:
+            print("SHOULD NOT HAPPEN??, DEBUG 3")
             attention_mask = torch.ones(batch_size, self.max_length, device=device)
         
         # Pass through ALBERT
@@ -170,7 +173,7 @@ class AudioALBERTClassifier(nn.Module):
             audio: Raw audio tensor
             
         Returns:
-            Dictionary with predictions and probabilities
+            Dictionary with predictions and probabilities #not evaluated yet, im not at that stage
         """
         self.eval()
         with torch.no_grad():

@@ -114,6 +114,14 @@ Bit Depth(bits per sample): 16 - 16
 Sample Rate: 16000 - 16000 Hz
 Channels: {'mono'}
 
+wyniki dla noise/
+=== Aggregated Dataset Statistics ===
+Bitrate: 256121 - 672000 bps
+Duration: 0.0015 - 5.12 s
+Bit Depth(bits per sample): 16 - 16
+Sample Rate: 16000 - 16000 Hz
+Channels: {'mono'}
+
 
 ffprobe.json to przyklkadowy output jaki dostalem z funckji subprocess.run(cmd)
 """
@@ -223,5 +231,5 @@ if __name__ == "__main__":
     # src_folder = "dataset_preliminary"
     # split_and_copy_dataset(src_folder, training_folder, validation_folder, test_folder)
 
-    analyze_audio_files("dataset_preliminary")
+    analyze_audio_files("noise")
     # delete_json_files("dataset_preliminary")
