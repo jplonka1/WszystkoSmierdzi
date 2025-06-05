@@ -1,8 +1,0 @@
-Augmentation steps applied (in order):
-add_noise(noise_amp=0.00895)
-time_shift(shift_fraction=0.0311, shift_samples=169140)
-add_echo(delay_sec=0.3000, decay=0.5)
-partial_erase(used default params)
-amplitude_clipping(clip_amp=0.9786)
-volume_amplify(gain=0.6145)
-tanh_distortion(strength=4.0959)

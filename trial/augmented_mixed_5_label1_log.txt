@@ -1,0 +1,24 @@
+Augmentation steps applied (in order):
+Background:
+  add_noise(noise_amp=0.01508)
+  amplitude_clipping(clip_amp=0.7960)
+  add_echo(delay_sec=0.1804, decay=0.5)
+  volume_amplify(gain=1.1800)
+  partial_erase(used default params)
+Noise:
+  add_noise(noise_amp=0.00528)
+  amplitude_clipping(clip_amp=0.9475)
+  time_shift(shift_fraction=0.0000, shift_samples=0)
+  tanh_distortion(strength=1.2208)
+  partial_erase(used default params)
+  volume_amplify(gain=1.0055)
+Drone:
+  amplitude_clipping(clip_amp=0.9780)
+  pitch_shift(shift_steps=1.3281)
+  volume_amplify(gain=1.4785)
+  random_filter(choice='band', low=301.62, high=901.62)
+  time_shift(shift_fraction=0.0261, shift_samples=427)
+  add_noise(noise_amp=0.01567)
+  tanh_distortion(strength=3.5518)
+  add_echo(delay_sec=0.2880, decay=0.5)
+  partial_erase(used default params)

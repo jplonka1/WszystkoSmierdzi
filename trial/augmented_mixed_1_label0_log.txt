@@ -1,0 +1,13 @@
+Augmentation steps applied (in order):
+Background:
+  volume_amplify(gain=1.0695)
+  partial_erase(used default params)
+  add_noise(noise_amp=0.00540)
+Noise:
+  add_echo(delay_sec=0.2806, decay=0.5)
+  volume_amplify(gain=1.1464)
+  add_noise(noise_amp=0.00893)
+  partial_erase(used default params)
+  amplitude_clipping(clip_amp=0.8602)
+  pitch_shift(shift_steps=-0.2807)
+  time_shift(shift_fraction=-0.0203, shift_samples=-316)
