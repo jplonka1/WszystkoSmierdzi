@@ -33,6 +33,8 @@ class AudioDataset(Dataset):
         self.audio_paths = audio_paths
         self.config = config
         self.is_training = is_training
+        self.shared_noise_files = shared_noise_files if shared_noise_files is not None else []
+        self.shared_background_noise = shared_background_noise if shared_background_noise is not None else []
 
     
     def __len__(self) -> int:
