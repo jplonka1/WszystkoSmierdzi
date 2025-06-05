@@ -1,0 +1,15 @@
+Augmentation steps applied (in order):
+Background:
+  partial_erase(used default params)
+  add_noise(noise_amp=0.01453)
+  volume_amplify(gain=1.4917)
+Noise:
+  partial_erase(used default params)
+  random_filter(choice='high', cutoff=207.26)
+  pitch_shift(shift_steps=-1.5652)
+  hpss_separate(harm_ratio=0.8217, perc_ratio=0.1783)
+  tanh_distortion(strength=1.0845)
+  volume_amplify(gain=1.1280)
+  add_noise(noise_amp=0.01493)
+  amplitude_clipping(clip_amp=0.8587)
+  time_shift(shift_fraction=0.0331, shift_samples=516)

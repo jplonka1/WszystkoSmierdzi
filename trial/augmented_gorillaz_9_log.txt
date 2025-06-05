@@ -1,7 +1,0 @@
-Augmentation steps applied (in order):
-partial_erase(used default params)
-random_filter(choice='band', low=313.44, high=913.44)
-time_shift(shift_fraction=0.0219, shift_samples=119206)
-tanh_distortion(strength=1.3620)
-add_noise(noise_amp=0.01892)
-amplitude_clipping(clip_amp=0.9528)

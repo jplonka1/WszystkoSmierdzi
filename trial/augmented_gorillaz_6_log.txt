@@ -1,7 +1,0 @@
-Augmentation steps applied (in order):
-amplitude_clipping(clip_amp=0.9241)
-time_shift(shift_fraction=-0.0371, shift_samples=-201935)
-partial_erase(used default params)
-random_filter(choice='high', cutoff=104.04)
-add_noise(noise_amp=0.01234)
-volume_amplify(gain=0.8127)

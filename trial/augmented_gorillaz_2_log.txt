@@ -1,8 +1,0 @@
-Augmentation steps applied (in order):
-add_noise(noise_amp=0.01936)
-time_shift(shift_fraction=-0.0146, shift_samples=-79144)
-volume_amplify(gain=1.1458)
-random_filter(choice='band', low=333.57, high=933.57)
-hpss_separate(harm_ratio=0.3120, perc_ratio=0.6880)
-partial_erase(used default params)
-pitch_shift(shift_steps=-1.1077)
