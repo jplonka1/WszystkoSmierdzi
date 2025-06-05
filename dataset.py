@@ -56,9 +56,6 @@ class AudioDataset(Dataset):
         try:
             # Load audio using librosa (returns numpy array)
             audio_np, sr = librosa.load(audio_path, sr=self.config.audio.sample_rate, mono=True)
-            
-            ## Tutaj chyba miałam funkcję zaimportnować?
-            from augmentation import augment_audio
 
             # Apply augment_audio for augmentation
             if self.is_training:
