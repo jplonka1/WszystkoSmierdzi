@@ -40,7 +40,7 @@ from transformers import (
 # Local imports
 from config import load_config, ExperimentConfig
 from model import create_model
-from dataset import load_dataset_from_directories, collate_fn
+from dataset import load_dataset_from_directories, collate_fn, AudioDataset
 from utils import (
     compute_metrics, 
     evaluate_model_comprehensive,
@@ -119,7 +119,6 @@ def predict_audio_event(
     model.eval()
     
     # Create temporary dataset for single file #TODO: completely redo the next lines
-    from dataset import AudioDataset
     temp_dataset = AudioDataset([audio_path], [0], config, is_training=False)
     
     # Get features
@@ -146,7 +145,7 @@ def predict_audio_event(
     return result
 
 
-def create_trainer(
+def create_trainer(#looks good for now
     model,
     train_dataset,
     eval_dataset,
@@ -217,7 +216,7 @@ def train_model(config: ExperimentConfig) -> Dict[str, Any]:
     set_seed(config.training.seed)
     
     logger.info("Starting audio event detection training")
-    logger.info(f"Configuration: {config}")
+    #logger.info(f"Configuration: {config}")
     log_system_info()
     
     # Setup directories

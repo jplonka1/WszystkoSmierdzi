@@ -148,8 +148,9 @@ class AudioALBERTClassifier(nn.Module):
         
         # Create attention mask if not provided
         if attention_mask is None:
-            print("SHOULD NOT HAPPEN??, DEBUG 3")
-            attention_mask = torch.ones(batch_size, self.max_length, device=device)
+            # Create attention mask: 1 for real tokens, 0 for padding
+            # For audio, we typically want all positions to be attended to
+            attention_mask = torch.ones(batch_size, self.max_length, device=device, dtype=torch.long)
         
         # Pass through ALBERT
         outputs = self.albert(
@@ -160,9 +161,7 @@ class AudioALBERTClassifier(nn.Module):
         
         return {
             'loss': outputs.loss,
-            'logits': outputs.logits,
-            'hidden_states': outputs.hidden_states,
-            'attentions': outputs.attentions
+            'logits': outputs.logits
         }
     
     def predict(self, audio: torch.Tensor) -> Dict[str, Any]:

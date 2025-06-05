@@ -21,6 +21,7 @@ logging.basicConfig(level=logging.INFO, format='%(levelname)s: %(message)s')
 logger = logging.getLogger(__name__)
 
 
+
 def test_imports():
     """Test that all required modules can be imported."""
     logger.info("Testing module imports...")
@@ -66,7 +67,7 @@ def test_config_system():
         return True
         
     except Exception as e:
-        logger.error(f"❌ Configuration test failed: {e}")
+        logger.error(f"❌ Configurationf test failed: {e}")
         return False
 
 
@@ -134,7 +135,6 @@ def test_audio_processing():
         # Test dataset creation
         dataset = AudioDataset(
             audio_paths=[dummy_audio_path],
-            labels=[1],
             config=config,
             is_training=False
         )
@@ -192,7 +192,7 @@ def check_data_directories():
     logger.info("Checking data directories...")
     
     directories = {
-        "Event data": "dataset_current/training",
+        "Event data": "dataset_preliminary",
         "Background data": "Background",
         "Noise data": "noise"
     }

@@ -231,5 +231,5 @@ if __name__ == "__main__":
     # src_folder = "dataset_preliminary"
     # split_and_copy_dataset(src_folder, training_folder, validation_folder, test_folder)
 
-    analyze_audio_files("noise")
+    analyze_audio_files("dataset_preliminary")
     # delete_json_files("dataset_preliminary")

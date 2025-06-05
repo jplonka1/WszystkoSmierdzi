@@ -24,74 +24,27 @@ class AudioDataset(Dataset):
         self,
         audio_paths: List[str],
         config: ExperimentConfig,
-        is_training: bool = True,#so far were not really using this flag and have to think if theres going to be difference between f.e. inference/evaluation and training here on the side of this class, ignore for now I guess 
-        cache_features: bool = True,
-        shared_noise_files: Optional[List[str]] = None,
-        shared_background_noise: Optional[List[str]] = None
+        is_training: bool = True,#so far were not really using this flag and have to think if theres going to be difference between f.e. inference/evaluation and training here on the side of this class, ignore for now I guess
+        shared_noise_files: List[str] = None,
+        shared_background_noise = None,
     ):
+        print("soefneojnfwoenf")
         self.audio_paths = audio_paths
         self.config = config
         self.is_training = is_training
-        self.cache_features = cache_features
-        
-        # Cache for processed features
-        self._feature_cache = {} if cache_features else None
-        
-        # Use shared noise files to avoid memory duplication
-        if shared_noise_files is not None:
-            self.noise_files = shared_noise_files
-            logger.info(f"Using shared {len(self.noise_files)} noise files for augmentation")
-        else:
-            self.noise_files = self._load_noise_files()
-            logger.info(f"Loaded {len(self.noise_files)} noise files for augmentation")
-            
-        if shared_background_noise is not None:
-            self.background_noise = shared_background_noise
-            logger.info(f"Using shared {len(self.background_noise)} background noise files")
-        else:
-            self.background_noise = self._load_background_noise()
-            logger.info(f"Loaded {len(self.background_noise)} background noise as a basis")
-        
-        logger.info(f"Created dataset with {len(self.audio_paths)} samples")
-    
-    def _load_noise_files(self) -> List[str]:
-        """Load noise files for augmentation."""
-        if not os.path.exists(self.config.data.noise_dir):
-            logger.warning(f"Noise directory not found: {self.config.data.noise_dir}")
-            return []
-        noise_files = glob.glob(os.path.join(self.config.data.noise_dir, "*.wav"))
-        return noise_files
 
-    def _load_background_noise(self) -> List[str]:
-        """Load background noise files as a basis of sound. On top of this sound (after weak augmentation, the drone sounds will be loaded (50/50) and random noise sounds from (noise/unknown)(0-2 sounds per something) that undergo same augmentation as the drone sounds (to prevent overfitting to augmentation artefacts)"""
-        if not os.path.exists(self.config.data.background_dir):
-            logger.warning(f"Background noise directory not found: {self.config.data.background_dir}")
-            return []
-        noise_files = glob.glob(os.path.join(self.config.data.background_dir, "*.wav"))
-        return noise_files
     
     def __len__(self) -> int:
         return len(self.audio_paths)
     
     def __getitem__(self, idx: int) -> Dict[str, torch.Tensor]:
         audio_path = self.audio_paths[idx]#TODO: investigate if idx should be randomized here or why its actually giving idx at all        
-        # 50% chance to flip label
-        if random.random() < 0.5:
-            label = 1
-            # Check cache first
-            if self._feature_cache is not None and audio_path in self._feature_cache:# TODO: investigate if laoding data like this (so caching and cheacking if its in cache every time) is better than just load it in the beggining all at once
-                audio_tensor = self._feature_cache[audio_path]
-            else:
-                audio_tensor = self._load_and_process_audio(audio_path)
-                # Cache if enabled
-                if self._feature_cache is not None:
-                    self._feature_cache[audio_path] = audio_tensor
-            if self.is_training and self.config.augmentation.enable:
-                audio_tensor = self._apply_augmentations(audio_tensor)#redo augmentations
-                
-        else:
-            label = 0
-            audio_tensor = self._load_and_process_audio(audio_path)#TODO: develop this part from scratch, rn this is placeholder to not throw errors
+        # TODO: completely rebuild this funciton, it now is setup to not throw errors
+        print(f"something asked for {idx} item from audio dataset")
+        audio_tensor = self._load_and_process_audio(audio_path)
+        # TODO: augmentations
+        print(f"Loaded audio tensor of shape {audio_tensor.shape}")
+        label = 1 if "drone" in audio_path else 0  # placeholder
         return {
             'input_values': audio_tensor,
             'labels': torch.tensor(label, dtype=torch.long)#TODO: ensure this is correct notation/syntax to prep this flag (drone or no, label 1 or 0) for model
@@ -138,87 +91,10 @@ class AudioDataset(Dataset):
             audio = audio[:, start:start + target_length]
         elif current_length < target_length:
             # Pad if shorter
-            print("THIS SHOULD NEVEER HAPPEN DEBUG 5")
             pad_length = target_length - current_length
             audio = torch.nn.functional.pad(audio, (0, pad_length), "constant", 0)
         
         return audio
-    
-    def _apply_augmentations(self, audio: torch.Tensor) -> torch.Tensor:#TODO: SIGNIFICANTLY REBUULD THIS FUNCTION
-        """Apply data augmentations to raw audio."""
-        aug_config = self.config.augmentation
-        
-        # Volume/Gain augmentation
-        if random.random() < 0.5:
-            gain = random.uniform(*aug_config.gain_range)
-            audio = audio * gain#Possibly not needed, were gonna build augmentations from scratch
-        
-        # Add background noise
-        if random.random() < aug_config.noise_prob and self.noise_files:
-            audio = self._add_background_noise(audio)
-        
-        # Pitch shift (if available)
-        if random.random() < aug_config.pitch_shift_prob:
-            audio = self._pitch_shift(audio)
-        
-        return audio
-    
-    def _add_background_noise(self, audio: torch.Tensor) -> torch.Tensor:#Possibly not needed, were gonna build augmentations from scratch
-        """Add background noise to audio."""
-        if not self.noise_files:
-            return audio
-        
-        try:
-            # Load random noise file
-            noise_path = random.choice(self.noise_files)
-            noise, sr = torchaudio.load(noise_path)
-            
-            # Convert to mono and resample if needed
-            if noise.shape[0] > 1:
-                noise = noise.mean(dim=0, keepdim=True)
-            
-            if sr != self.config.audio.sample_rate:
-                noise = torchaudio.functional.resample(
-                    noise, sr, self.config.audio.sample_rate
-                )
-            
-            noise = noise.squeeze(0)  # Remove batch dimension
-            
-            # Match lengths
-            if len(noise) > len(audio):
-                start = random.randint(0, len(noise) - len(audio))
-                noise = noise[start:start + len(audio)]
-            elif len(noise) < len(audio):
-                # Repeat noise if too short
-                repeats = (len(audio) // len(noise)) + 1
-                noise = noise.repeat(repeats)[:len(audio)]
-            
-            # Random mixing level
-            noise_level = random.uniform(*self.config.augmentation.noise_level_range)
-            
-            # Mix audio with noise
-            mixed_audio = (1 - noise_level) * audio + noise_level * noise
-            return mixed_audio
-            
-        except Exception as e:
-            logger.warning(f"Failed to add background noise: {e}")
-            return audio
-    
-    def _pitch_shift(self, audio: torch.Tensor) -> torch.Tensor:#Possibly not needed, were gonna build augmentations from scratch
-        """Apply pitch shift to audio."""
-        try:
-            n_steps = random.randint(*self.config.augmentation.pitch_shift_range)
-            if n_steps != 0:
-                audio = torchaudio.functional.pitch_shift(
-                    audio.unsqueeze(0), 
-                    self.config.audio.sample_rate, 
-                    n_steps
-                ).squeeze(0)
-            return audio
-        except Exception as e:
-            logger.warning(f"Failed to apply pitch shift: {e}")
-            return audio
-
 
 def load_dataset_from_directories(config: ExperimentConfig) -> Tuple[AudioDataset, AudioDataset, AudioDataset]:
     """Load dataset from event and noise directories."""
@@ -245,38 +121,58 @@ def load_dataset_from_directories(config: ExperimentConfig) -> Tuple[AudioDatase
     logger.info(f"Dataset split - Train: {n_train}, Val: {n_val}, Test: {n_test}")
     
     # Load noise files once and share them across all datasets to save memory
-    logger.info("Loading shared noise files...")
+    #logger.info("Loading shared noise files...")
     shared_noise_files = []
     if os.path.exists(config.data.noise_dir):
         shared_noise_files = glob.glob(os.path.join(config.data.noise_dir, "*.wav"))
-        logger.info(f"Loaded {len(shared_noise_files)} shared noise files")
+        logger.info(f"Found {len(shared_noise_files)} shared noise files")
     
     shared_background_noise = []
     if os.path.exists(config.data.background_dir):
         shared_background_noise = glob.glob(os.path.join(config.data.background_dir, "*.wav"))
-        logger.info(f"Loaded {len(shared_background_noise)} shared background noise files")
+        logger.info(f"Found {len(shared_background_noise)} shared background noise files")
+
+            # Load .wav files from shared_background_noise list of strings
+        # Load .wav files from shared_background_noise list of strings into memory
+    background_files = []
+    for f in shared_background_noise:
+        if f.lower().endswith('.wav'):
+            try:
+                audio, sr = torchaudio.load(f)
+                background_files.append((audio, sr))
+            except Exception as e:
+                logger.warning(f"Failed to load background noise file {f}: {e}")
+        
+    noise_files = []
+    for f in shared_noise_files:
+        if f.lower().endswith('.wav'):
+            try:
+                audio, sr = torchaudio.load(f)
+                noise_files.append((audio, sr))
+            except Exception as e:
+                logger.warning(f"Failed to load noise file {f}: {e}")
     
     # Create datasets with shared noise files
     train_dataset = AudioDataset(
-        train_files, config, is_training=True, 
-        shared_noise_files=shared_noise_files,
-        shared_background_noise=shared_background_noise
+        train_files, config, is_training=True,
+        shared_noise_files=noise_files,
+        shared_background_noise=background_files
     )
     val_dataset = AudioDataset(
         val_files, config, is_training=False,
-        shared_noise_files=shared_noise_files,
-        shared_background_noise=shared_background_noise
+        shared_noise_files=noise_files,
+        shared_background_noise=background_files
     )
     test_dataset = AudioDataset(
         test_files, config, is_training=False,
-        shared_noise_files=shared_noise_files,
-        shared_background_noise=shared_background_noise
+        shared_noise_files=noise_files,
+        shared_background_noise=background_files
     )
     
     return train_dataset, val_dataset, test_dataset
 
 
-def collate_fn(batch: List[Dict[str, torch.Tensor]]) -> BatchFeature:
+def collate_fn(batch: List[Dict[str, torch.Tensor]]) -> BatchFeature:#read more about it
     """Custom collate function for batching audio data."""
     # Input: List of individual items from dataset.__getitem__()
     # Each item: {'input_values': tensor, 'labels': tensor}
