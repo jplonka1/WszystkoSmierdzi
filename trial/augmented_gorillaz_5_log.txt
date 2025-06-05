@@ -1,0 +1,6 @@
+Augmentation steps applied (in order):
+amplitude_clipping(clip_amp=0.9033)
+partial_erase(used default params)
+time_shift(shift_fraction=-0.0087, shift_samples=-47550)
+volume_amplify(gain=1.1715)
+add_noise(noise_amp=0.00797)

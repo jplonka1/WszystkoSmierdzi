@@ -13,6 +13,7 @@ from transformers import BatchFeature
 import random
 
 from config import ExperimentConfig
+from augmentation import augment_audio
 
 logger = logging.getLogger(__name__)
 
@@ -51,26 +52,25 @@ class AudioDataset(Dataset):
         }
     
     def _load_and_process_audio(self, audio_path: str) -> torch.Tensor:
-        """Load audio file and return raw audio tensor."""
+        """Load audio file, apply custom augmentation (librosa input, torch output), and return as torch tensor."""
         try:
-            # Load audio
-            audio, sr = torchaudio.load(audio_path)#TODO: Load the file as .wav and apply seom augmentations that cannot be done on tensors (not supported by tensor audio), do them then convert to tensor and apply the rest of augmentations on GPU. TODO2: Ensure there is no context switching after final tensor conversion
+            # Load audio using librosa (returns numpy array)
+            audio_np, sr = librosa.load(audio_path, sr=self.config.audio.sample_rate, mono=True)
             
-            # Convert to mono if necessary
-            if audio.shape[0] > 1:
-                audio = audio.mean(dim=0, keepdim=True)
+            ## Tutaj chyba miałam funkcję zaimportnować?
+            from augmentation import augment_audio
+
+            # Apply augment_audio for augmentation
+            if self.is_training:
+                audio_np = augment_audio(audio_np, sr, self.config)
             
-            # Resample if necessary
-            if sr != self.config.audio.sample_rate:
-                print("SHOULD NEVER HAPPEN DEBUG 4")
-                audio = torchaudio.functional.resample(
-                    audio, sr, self.config.audio.sample_rate
-                )
+            # Convert to torch tensor and add channel dimension
+            audio = torch.from_numpy(audio_np).float().unsqueeze(0)
             
             # Normalize duration and return as 1D tensor
             audio = self._normalize_duration(audio)
             return audio.squeeze(0)  # Remove batch dimension, return 1D audio
-            
+
         except Exception as e:
             logger.error(f"Error processing audio {audio_path}: {e}")
             # Return zeros as fallback

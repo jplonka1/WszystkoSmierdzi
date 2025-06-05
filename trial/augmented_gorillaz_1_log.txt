@@ -1,0 +1,9 @@
+Augmentation steps applied (in order):
+time_shift(shift_fraction=0.1902, shift_samples=1034135)
+volume_amplify(gain=1.1730)
+add_echo(delay_sec=0.1504, decay=0.5)
+partial_erase(used default params)
+add_noise(noise_amp=0.01013)
+pitch_shift(shift_steps=-0.6335)
+hpss_separate(harm_ratio=0.6477, perc_ratio=0.3523)
+amplitude_clipping(clip_amp=0.8510)

@@ -155,7 +155,6 @@ def create_trainer(#looks good for now
     """Create and configure the Trainer."""
     
     # Training arguments
-    print("YO")
     training_args = TrainingArguments(
         output_dir=output_dirs['models'],
         num_train_epochs=config.training.num_train_epochs,
@@ -194,7 +193,6 @@ def create_trainer(#looks good for now
         remove_unused_columns=False,
         push_to_hub=False,
     )
-    print("YoO")
     # Create trainer
     trainer = Trainer(
         model=model,
@@ -239,9 +237,7 @@ def train_model(config: ExperimentConfig) -> Dict[str, Any]:
     logger.info(f"Model parameters - Total: {total_params:,}, Trainable: {trainable_params:,}")
     
     # Create trainer
-    print("yo")
     trainer = create_trainer(model, train_dataset, val_dataset, config, output_dirs)
-    print("YOOOOOOOOOO")
     # Add custom callback
     metrics_callback = MetricsCallback()
     trainer.add_callback(metrics_callback)
