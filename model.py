@@ -92,6 +92,8 @@ class AudioALBERTClassifier(nn.Module):
         )
         
         # Freeze ALBERT if specified
+        #CHAT - If True, disables gradient updates for the ALBERT 
+        #base model (useful for fine-tuning only the projection/classification layers).
         if freeze_albert:#idk co to
             for param in self.albert.albert.parameters():
                 param.requires_grad = False
