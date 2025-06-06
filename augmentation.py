@@ -3,303 +3,13 @@ import librosa
 import torch
 import soundfile as sf
 import os
+import sys
 import random
 from scipy.signal import butter, lfilter
 from scipy.stats import truncnorm
-
-### AUGMENTACJA
-
-# -------- Utility for truncated normal --------
-def truncated_normal(mean, std, lower, upper):
-    return truncnorm((lower - mean) / std, (upper - mean) / std, loc=mean, scale=std).rvs()
-
-# -------- Augmentation Functions --------
-def amplitude_clipping(audio, clip_range=(0.75, 1.0)):
-    clip_amp = truncated_normal(0.875, 0.05, *clip_range)
-    max_val = np.max(np.abs(audio))
-    return np.clip(audio, -clip_amp * max_val, clip_amp * max_val)
-
-def volume_amplify(audio, amp_range=(0.5, 1.5)):
-    gain = truncated_normal(1.0, 0.25, *amp_range)
-    return audio * gain
-
-def add_echo(audio, sr, delay_range=(0.02, 0.4), decay=0.5):
-    delay_sec = truncated_normal(0.21, 0.1, *delay_range)
-    delay_samples = int(delay_sec * sr)
-    echo = np.zeros_like(audio)
-    if delay_samples < len(audio):
-        echo[delay_samples:] = audio[:-delay_samples] * decay
-    return audio + echo
-
-def partial_erase(audio, sr, erase_ratio=(0.1, 0.3), chunk_ratio_range=(0.01, 0.05)):
-    """
-    Erases multiple small chunks of the audio with total duration proportional to audio length.
-
-    Parameters:
-        audio (np.ndarray): Audio signal.
-        sr (int): Sample rate.
-        erase_ratio (tuple): Min and max fraction of audio to erase (e.g., 0.1 to 0.3 for 10%–30%).
-        chunk_ratio_range (tuple): Min and max chunk length as fraction of total duration 
-                                   (e.g., 0.01 to 0.05 for 1%–5%).
-
-    Returns:
-        np.ndarray: Modified audio.
-    """
-    audio = audio.copy()
-    total_len = len(audio)
-    total_duration = total_len / sr
-
-    # Step 1: Choose total erase duration as a fraction of total audio duration
-    total_erase_duration = truncated_normal(0.2, 0.1, *erase_ratio) * total_duration
-    total_erase_samples = int(total_erase_duration * sr)
-
-    erased = 0
-    attempts = 0
-    max_attempts = 1000  # Increased attempts for flexibility
-
-    while erased < total_erase_samples and attempts < max_attempts:
-        # Step 2: Sample a chunk length ratio, convert to samples
-        chunk_ratio = truncated_normal(0.03, 0.01, *chunk_ratio_range)  # mean 3%, std 1%
-        chunk_len = int(chunk_ratio * total_len)
-
-        if chunk_len == 0 or chunk_len + erased > total_erase_samples or chunk_len >= total_len:
-            attempts += 1
-            continue
-
-        # Step 3: Choose a random start location
-        start = np.random.randint(0, total_len - chunk_len)
-
-        # Step 4: Erase chunk by replacing with noise
-        audio[start:start + chunk_len] = np.random.normal(0, 0.01, chunk_len)
-
-        erased += chunk_len
-        attempts += 1
-
-    return audio
-
-## PITCH SEEMS LIKE A STRONG EFFECT     
-def pitch_shift(audio, sr, shift_range=(-5, 5)):
-    shift_steps = truncated_normal(0, 2, *shift_range)
-    return librosa.effects.pitch_shift(audio, sr=sr, n_steps=shift_steps)
-
-def add_noise(audio, noise_level=(0.005, 0.02)):
-    noise_amp = truncated_normal(0.01, 0.005, *noise_level)
-    return audio + np.random.normal(0, noise_amp, size=len(audio))
-
-## THIS SEEMS LIKE MOSTLY A MUSIC AUGMENTATION, NOT FOR DRONES, NOISE ETC.
-def hpss_separate(audio, min_harm=0.3, max_harm=0.9):
-    harm, perc = librosa.effects.hpss(audio)
-    harm_ratio = np.random.uniform(min_harm, max_harm)
-    perc_ratio = 1.0 - harm_ratio
-    augmented = harm_ratio * harm + perc_ratio * perc
-
-    # Normalize
-    max_val = np.max(np.abs(augmented))
-    if max_val > 1.0:
-        augmented = augmented / max_val
-
-    return augmented
-
-## USEFUL, IT ROLLS AUDIO (beginning is cut and put at the end)
-def time_shift(audio, shift_max=0.2):
-    shift_fraction = truncated_normal(0, 0.05, -shift_max, shift_max)
-    shift = int(len(audio) * shift_fraction)
-    return np.roll(audio, shift)
-
-def tanh_distortion(audio, distortion_level=(1.0, 5.0)):
-    strength = truncated_normal(2.0, 1.0, *distortion_level)
-    return np.tanh(audio * strength)
-
-def butter_filter(audio, sr, cutoff, btype='low', order=5):
-    nyquist = 0.5 * sr
-    norm_cutoff = np.array(cutoff) / nyquist
-    b, a = butter(order, norm_cutoff, btype=btype, analog=False)
-    return lfilter(b, a, audio)
-
-def high_pass(audio, sr, cutoff_range=(100, 400)):
-    # For drones, use a lower cutoff range to preserve low-frequency content
-    cutoff = truncated_normal(200, 50, *cutoff_range)
-    return butter_filter(audio, sr, cutoff, btype='high')
-
-def band_pass(audio, sr, band_range=(50, 800)):
-    # For drones, use a wider band to include more low-mid frequencies
-    low = truncated_normal(200, 100, band_range[0], band_range[1])
-    high = low + 600  # 600 Hz band width, suitable for drone harmonics
-    return butter_filter(audio, sr, [low, high], btype='band')
-
-# Applying both bands is unnatural, so we choose one randomly
-def random_filter(audio, sr):
-    choice = random.choice(['high', 'band'])
-    if choice == 'high':
-        return high_pass(audio, sr)
-    else:
-        return band_pass(audio, sr)
-
-# -------- Augmentation Wrappers --------
-def get_augmentations_for_type(audio_type):
-    mild_augmentations = [
-        (amplitude_clipping, 0.8),
-        (volume_amplify, 0.85),
-        (add_echo, 0.5),
-        (partial_erase, 1),
-        (add_noise, 1),
-        # No pitch_shift, hpss_separate, time_shift, tanh_distortion, random_filter
-    ]
-
-    strong_augmentations = [
-        (amplitude_clipping, 0.8),
-        (volume_amplify, 0.85),
-        (add_echo, 0.5),
-        (partial_erase, 1),
-        (add_noise, 1),
-        (pitch_shift, 0.5),
-        (hpss_separate, 0.4),
-        (time_shift, 1),
-        (tanh_distortion, 0.3),
-        (random_filter, 0.5),
-    ]
-
-    if audio_type == "background":
-        return mild_augmentations
-    elif audio_type in ("drone", "noise"):
-        return strong_augmentations
-    else:
-        # Default fallback to strong
-        return strong_augmentations
-
-def apply_augmentation(audio, sr, audio_type):
-    augmentations = get_augmentations_for_type(audio_type)
-    random.shuffle(augmentations)
-
-    log = []
-    audio_out = audio.copy()
-
-    for func, prob in augmentations:
-        if random.random() < prob:
-            if func == amplitude_clipping:
-                clip_amp = truncated_normal(0.875, 0.05, 0.75, 1.0)
-                max_val = np.max(np.abs(audio_out))
-                audio_out = np.clip(audio_out, -clip_amp * max_val, clip_amp * max_val)
-                log.append(f"{func.__name__}(clip_amp={clip_amp:.4f})")
-
-            elif func == volume_amplify:
-                gain = truncated_normal(1.0, 0.25, 0.5, 1.5)
-                audio_out = audio_out * gain
-                log.append(f"{func.__name__}(gain={gain:.4f})")
-
-            elif func == add_echo:
-                delay_sec = truncated_normal(0.21, 0.1, 0.02, 0.4)
-                decay = 0.5
-                delay_samples = int(delay_sec * sr)
-                echo = np.zeros_like(audio_out)
-                if delay_samples < len(audio_out):
-                    echo[delay_samples:] = audio_out[:-delay_samples] * decay
-                audio_out = audio_out + echo
-                log.append(f"{func.__name__}(delay_sec={delay_sec:.4f}, decay={decay})")
-
-            elif func == partial_erase:
-                audio_out = partial_erase(audio_out, sr)
-                log.append(f"{func.__name__}(used default params)")
-
-            elif func == add_noise:
-                noise_amp = truncated_normal(0.01, 0.005, 0.005, 0.02)
-                audio_out = audio_out + np.random.normal(0, noise_amp, size=len(audio_out))
-                log.append(f"{func.__name__}(noise_amp={noise_amp:.5f})")
-
-            elif func == pitch_shift:
-                shift_steps = truncated_normal(0, 2, -5, 5)
-                audio_out = librosa.effects.pitch_shift(audio_out, sr=sr, n_steps=shift_steps)
-                log.append(f"{func.__name__}(shift_steps={shift_steps:.4f})")
-
-            elif func == hpss_separate:
-                min_harm = 0.3
-                max_harm = 0.9
-                harm, perc = librosa.effects.hpss(audio_out)
-                harm_ratio = np.random.uniform(min_harm, max_harm)
-                perc_ratio = 1.0 - harm_ratio
-                augmented = harm_ratio * harm + perc_ratio * perc
-                max_val = np.max(np.abs(augmented))
-                if max_val > 1.0:
-                    augmented = augmented / max_val
-                audio_out = augmented
-                log.append(f"{func.__name__}(harm_ratio={harm_ratio:.4f}, perc_ratio={perc_ratio:.4f})")
-
-            elif func == time_shift:
-                shift_max = 0.2
-                shift_fraction = truncated_normal(0, 0.05, -shift_max, shift_max)
-                shift = int(len(audio_out) * shift_fraction)
-                audio_out = np.roll(audio_out, shift)
-                log.append(f"{func.__name__}(shift_fraction={shift_fraction:.4f}, shift_samples={shift})")
-
-            elif func == tanh_distortion:
-                strength = truncated_normal(2.0, 1.0, 1.0, 5.0)
-                audio_out = np.tanh(audio_out * strength)
-                log.append(f"{func.__name__}(strength={strength:.4f})")
-
-            elif func == random_filter:
-                choice = random.choice(['high', 'band'])
-                if choice == 'high':
-                    cutoff = truncated_normal(200, 50, 100, 400)
-                    audio_out = butter_filter(audio_out, sr, cutoff, btype='high')
-                    log.append(f"{func.__name__}(choice='high', cutoff={cutoff:.2f})")
-                else:
-                    low = truncated_normal(200, 100, 50, 800)
-                    high = low + 600
-                    audio_out = butter_filter(audio_out, sr, [low, high], btype='band')
-                    log.append(f"{func.__name__}(choice='band', low={low:.2f}, high={high:.2f})")
-
-    return audio_out, log
-
-# -------- Main Augmentation Logic --------
-def augment_and_mix(background, drone, noise, sr, save_path=None):
-    # Mild augmentation for background
-    background_aug, background_log = apply_augmentation(background.copy(), sr, "background")
-    
-    # Strong augmentation for noise
-    noise_aug, noise_log = apply_augmentation(noise.copy(), sr, "noise")
-    label = 0
-
-    # Drone might be None
-    if drone is not None:
-        drone_aug, drone_log = apply_augmentation(drone.copy(), sr, "drone")
-        label = 1
-    else:
-        drone_aug = None
-        drone_log = []
-
-    # Mix them using the provided mixing function
-    mixed = mix_librosa_audio(background_aug, drone_aug, noise_aug, sr)
-    mixed_tensor = torch.from_numpy(mixed).float()
-
-    if save_path:
-        filename = os.path.splitext(os.path.basename(save_path))[0]
-        labelled_path = os.path.join(os.path.dirname(save_path), f"{filename}_label{label}.wav")
-        # Ensure the directory exists
-        os.makedirs(os.path.dirname(labelled_path), exist_ok=True)
-        sf.write(labelled_path, mixed, sr)
-        print(f"[DEBUG] Saved: {labelled_path}")
-
-        # Save logs for each component
-        log_folder = os.path.dirname(save_path)
-        if not os.path.exists(log_folder):
-            os.makedirs(log_folder, exist_ok=True)
-        log_path = os.path.join(log_folder, f"{filename}_label{label}_log.txt")
-        with open(log_path, "w") as f:
-            f.write("Augmentation steps applied (in order):\n")
-            f.write("Background:\n")
-            for step in background_log:
-                f.write("  " + step + "\n")
-            f.write("Noise:\n")
-            for step in noise_log:
-                f.write("  " + step + "\n")
-            if drone is not None:
-                f.write("Drone:\n")
-                for step in drone_log:
-                    f.write("  " + step + "\n")
-        print(f"[DEBUG] Saved log: {log_path}")
-
-    return mixed_tensor, label
-
+from typing import Optional
+import uuid
+import json
 
 ###  MIXOWANIE
 
@@ -343,69 +53,315 @@ def insert_with_fade(background, snippet, sr, fade=True, gain_db_range=(-3, 0)):
     mixed[start:start + len(snippet)] += snippet
     return mixed
 
-def mix_librosa_audio(background, drone, noise, sr):
-    """
-    Mix drone and noise into the background with fade-in/out and random timing.
-    """
-    # Ensure all signals are the same length or shorter than background
-    background = background.copy()
-    
-    if drone is not None and len(drone) > len(background):
-        drone = drone[:len(background)]
-    if len(noise) > len(background):
-        noise = noise[:len(background)]
+### AUGMENTACJA
 
-    # Mix drone and noise with background
-    if drone is not None:
-        background = insert_with_fade(background, drone, sr, fade=True, gain_db_range=(-4, 0))
-    background = insert_with_fade(background, noise, sr, fade=True, gain_db_range=(-4, -1))
+# -------- Utility for truncated normal --------
+def truncated_normal(mean, std, lower, upper):
+    return truncnorm((lower - mean) / std, (upper - mean) / std, loc=mean, scale=std).rvs()
+
+# -------- Augmentation Functions --------
+def amplitude_clipping(audio, percent):
+    # percent: 0-100, how much of the amplitude to keep (e.g. 15 means clip at 85% of max)
+    clip_amp = 1.0 - percent / 100.0
+    max_val = np.max(np.abs(audio))
+    return np.clip(audio, -clip_amp * max_val, clip_amp * max_val)
+
+def volume_amplify(audio, gain_db):
+    gain_lin = 10 ** (gain_db / 20)
+    return audio * gain_lin
+
+def add_echo(audio, sr, delay_ms, decay):
+    delay_samples = int((delay_ms / 1000.0) * sr)
+    echo = np.zeros_like(audio)
+    if delay_samples < len(audio):
+        echo[delay_samples:] = audio[:-delay_samples] * decay
+    return audio + echo
+
+def partial_erase(audio, sr, erase_fraction):
+    audio = audio.copy()
+    total_len = len(audio)
+    total_erase_samples = int(erase_fraction * total_len)
+    erased = 0
+    attempts = 0
+    max_attempts = 1000
+    while erased < total_erase_samples and attempts < max_attempts:
+        chunk_len = np.random.randint(int(0.01 * total_len), int(0.05 * total_len))
+        if chunk_len == 0 or chunk_len + erased > total_erase_samples or chunk_len >= total_len:
+            attempts += 1
+            continue
+        start = np.random.randint(0, total_len - chunk_len)
+        audio[start:start + chunk_len] = np.random.normal(0, 0.01, chunk_len)
+        erased += chunk_len
+        attempts += 1
+    return audio
+
+def pitch_shift(audio, sr, semitones):
+    return librosa.effects.pitch_shift(audio, sr=sr, n_steps=semitones)
+
+def add_noise(audio, snr_db):
+    # SNR in dB: higher means less noise
+    rms_signal = np.sqrt(np.mean(audio ** 2))
+    snr_linear = 10 ** (snr_db / 20)
+    noise_rms = rms_signal / snr_linear
+    noise = np.random.normal(0, noise_rms, size=len(audio))
+    return audio + noise
+
+def hpss_separate(audio, harmonic_scale, percussive_scale):
+    harm, perc = librosa.effects.hpss(audio)
+    augmented = harmonic_scale * harm + percussive_scale * perc
+    max_val = np.max(np.abs(augmented))
+    if max_val > 1.0:
+        augmented = augmented / max_val
+    return augmented
+
+def time_shift(audio, sr, max_shift_seconds):
+    max_shift = int(max_shift_seconds * sr)
+    shift = np.random.randint(-max_shift, max_shift)
+    return np.roll(audio, shift)
+
+def tanh_distortion(audio, strength):
+    return np.tanh(audio * (1.0 + strength * 10))
+
+def butter_filter(audio, sr, cutoff, btype='low', order=5):
+    nyquist = 0.5 * sr
+    norm_cutoff = np.array(cutoff) / nyquist
+    b, a = butter(order, norm_cutoff, btype=btype, analog=False)
+    return lfilter(b, a, audio)
+
+def high_pass(audio, sr, cutoff):
+    return butter_filter(audio, sr, cutoff, btype='high')
+
+def band_pass(audio, sr, low, high):
+    return butter_filter(audio, sr, [low, high], btype='band')
+
+def random_filter(audio, sr, config):
+    # config: dict with keys 'p_apply', 'high_pass', 'band_pass'
+    if random.random() > config.get('p_apply', 0.8):
+        return audio
+    choice = random.choice(['high', 'band'])
+    if choice == 'high':
+        hp = config['high_pass']
+        cutoff = truncated_normal(hp['mean'], hp['std'], *hp['range'])
+        return high_pass(audio, sr, cutoff)
+    else:
+        bp = config['band_pass']
+        low = truncated_normal(bp['low_mean'], bp['low_std'], *bp['low_range'])
+        bw = truncated_normal(bp['bw_mean'], bp['bw_std'], *bp['bw_range'])
+        high = min(sr // 2 - 1, low + bw)
+        return band_pass(audio, sr, low, high)
+
+# -------- Augmentation Wrappers --------
+def get_augmentations_for_type(audio_type, config):
+    mild = config['augmentations']['mild']
+    strong = config['augmentations']['strong']
+    mild_augmentations = [
+        ('amplitude_clipping', amplitude_clipping, mild.get('amplitude_clipping')),
+        ('volume_amplify', volume_amplify, mild.get('volume_amplify')),
+        ('add_echo', add_echo, mild.get('add_echo')),
+        ('partial_erase', partial_erase, mild.get('partial_erase')),
+        ('add_noise', add_noise, mild.get('add_noise')),
+    ]
+    strong_augmentations = [
+        ('amplitude_clipping', amplitude_clipping, strong.get('amplitude_clipping')),
+        ('volume_amplify', volume_amplify, strong.get('volume_amplify')),
+        ('add_echo', add_echo, strong.get('add_echo')),
+        ('partial_erase', partial_erase, strong.get('partial_erase')),
+        ('add_noise', add_noise, strong.get('add_noise')),
+        ('pitch_shift', pitch_shift, strong.get('pitch_shift')),
+        ('hpss_separate', hpss_separate, strong.get('hpss_separate')),
+        ('time_shift', time_shift, strong.get('time_shift')),
+        ('tanh_distortion', tanh_distortion, strong.get('tanh_distortion')),
+        ('random_filter', random_filter, strong.get('random_filter')),
+    ]
+    if audio_type == "background":
+        return mild_augmentations
+    elif audio_type == "sound":
+        return strong_augmentations
+    else:
+        return strong_augmentations
+
+def apply_augmentation(audio, sr, audio_type, config):
+    augmentations = get_augmentations_for_type(audio_type, config)
+    random.shuffle(augmentations)
+    log = []
+    audio_out = audio.copy()
+    for name, func, aug_cfg in augmentations:
+        if aug_cfg is None:
+            continue
+        prob = aug_cfg.get('probability', 1.0)
+        if random.random() > prob:
+            continue
+        if name == 'amplitude_clipping':
+            p = aug_cfg['clip_percent']
+            percent = truncated_normal(p['mean'], p['std'], *p['range'])
+            audio_out = amplitude_clipping(audio_out, percent)
+            log.append(f"{name}(clip_percent={percent:.2f})")
+        elif name == 'volume_amplify':
+            p = aug_cfg['gain_db']
+            gain_db = truncated_normal(p['mean'], p['std'], *p['range'])
+            audio_out = volume_amplify(audio_out, gain_db)
+            log.append(f"{name}(gain_db={gain_db:.2f})")
+        elif name == 'add_echo':
+            delay_cfg = aug_cfg['delay_ms']
+            decay_cfg = aug_cfg['decay']
+            delay_ms = truncated_normal(delay_cfg['mean'], delay_cfg['std'], *delay_cfg['range'])
+            decay = truncated_normal(decay_cfg['mean'], decay_cfg['std'], *decay_cfg['range'])
+            audio_out = add_echo(audio_out, sr, delay_ms, decay)
+            log.append(f"{name}(delay_ms={delay_ms:.2f}, decay={decay:.2f})")
+        elif name == 'partial_erase':
+            p = aug_cfg['erase_fraction']
+            erase_fraction = truncated_normal(p['mean'], p['std'], *p['range'])
+            audio_out = partial_erase(audio_out, sr, erase_fraction)
+            log.append(f"{name}(erase_fraction={erase_fraction:.3f})")
+        elif name == 'add_noise':
+            p = aug_cfg['snr_db']
+            snr_db = truncated_normal(p['mean'], p['std'], *p['range'])
+            audio_out = add_noise(audio_out, snr_db)
+            log.append(f"{name}(snr_db={snr_db:.2f})")
+        elif name == 'pitch_shift':
+            if aug_cfg is None:
+                continue
+            p = aug_cfg['semitones']
+            semitones = truncated_normal(p['mean'], p['std'], *p['range'])
+            audio_out = pitch_shift(audio_out, sr, semitones)
+            log.append(f"{name}(semitones={semitones:.2f})")
+        elif name == 'hpss_separate':
+            harm_cfg = aug_cfg['harmonic_scale']
+            perc_cfg = aug_cfg['percussive_scale']
+            harmonic_scale = truncated_normal(harm_cfg['mean'], harm_cfg['std'], *harm_cfg['range'])
+            percussive_scale = truncated_normal(perc_cfg['mean'], perc_cfg['std'], *perc_cfg['range'])
+            audio_out = hpss_separate(audio_out, harmonic_scale, percussive_scale)
+            log.append(f"{name}(harmonic_scale={harmonic_scale:.2f}, percussive_scale={percussive_scale:.2f})")
+        elif name == 'time_shift':
+            p = aug_cfg['max_shift_seconds']
+            max_shift_seconds = truncated_normal(p['mean'], p['std'], *p['range'])
+            audio_out = time_shift(audio_out, sr, max_shift_seconds)
+            log.append(f"{name}(max_shift_seconds={max_shift_seconds:.3f})")
+        elif name == 'tanh_distortion':
+            p = aug_cfg['strength']
+            strength = truncated_normal(p['mean'], p['std'], *p['range'])
+            audio_out = tanh_distortion(audio_out, strength)
+            log.append(f"{name}(strength={strength:.2f})")
+        elif name == 'random_filter':
+            audio_out = random_filter(audio_out, sr, aug_cfg)
+            log.append(f"{name}(params=custom)")
+    return audio_out, log
+
+# -------- Main Augmentation Logic --------
+def augment_and_mix(background, sounds, sr, config, save_path=None):
+    """
+    background: np.ndarray, main background audio
+    sounds: list of np.ndarray, each sound to be mixed in (augmented identically)
+    sr: sample rate
+    config: dict, configuration for augmentations
+    save_path: optional, if provided saves the result and logs
+    Returns: mixed_tensor (torch.Tensor)
+    """
+    # Augment background (mild)
+    background_aug, background_log = apply_augmentation(background.copy(), sr, "background", config)
+
+    # If there are no sounds, just return background
+    if not sounds or len(sounds) == 0:
+        mixed_tensor = torch.from_numpy(background_aug).float()
+        if save_path:
+            filename = os.path.splitext(os.path.basename(save_path))[0]
+            out_wav = os.path.join(os.path.dirname(save_path), f"{filename}.wav")
+            os.makedirs(os.path.dirname(out_wav), exist_ok=True)
+            sf.write(out_wav, background_aug, sr)
+        return mixed_tensor
+
+    # Augment all sounds identically: generate one augmentation log, apply to all
+    ref_sound = sounds[0].copy()
+    aug_ref, aug_log = apply_augmentation(ref_sound, sr, "sound", config)
+    sounds_aug = [aug_ref.copy() for _ in sounds]
+
+    # Mix all sounds into background at random positions independently
+    mixed = background_aug.copy()
+    for aug_sound in sounds_aug:
+        mixed = insert_with_fade(mixed, aug_sound, sr, fade=True, gain_db_range=(-4, 0))
 
     # Normalize to prevent clipping
-    peak = np.max(np.abs(background))
+    peak = np.max(np.abs(mixed))
     if peak > 1:
-        background /= peak
+        mixed /= peak
 
-    return background
+    mixed_tensor = torch.from_numpy(mixed).float()
 
+    # If save_path is provided, save the mixed audio and logs
+    if save_path:
+        filename = os.path.splitext(os.path.basename(save_path))[0]
+        out_wav = os.path.join(os.path.dirname(save_path), f"{filename}.wav")
+        os.makedirs(os.path.dirname(out_wav), exist_ok=True)
+        sf.write(out_wav, mixed, sr)
+        print(f"[DEBUG] Saved: {out_wav}")
 
-### EXAMPLE
+        # Save logs for each component (sound log only once)
+        log_folder = os.path.dirname(save_path)
+        if not os.path.exists(log_folder):
+            os.makedirs(log_folder, exist_ok=True)
+        log_path = os.path.join(log_folder, f"{filename}_log.txt")
+        with open(log_path, "w") as f:
+            f.write("Augmentation steps applied (in order):\n")
+            f.write("Background:\n")
+            for step in background_log:
+                f.write("  " + step + "\n")
+            f.write("Sound (applied identically to all):\n")
+            for step in aug_log:
+                f.write("  " + step + "\n")
+        print(f"[DEBUG] Saved log: {log_path}")
 
-os.makedirs("trial", exist_ok=True)
+    return mixed_tensor
 
-for i in range(10):
-    background, sr = librosa.load("001_0.wav", sr=None)
-    drone = librosa.load("B_S2_D1_067-bebop_001_.wav", sr=None)[0] if np.random.rand() < 0.5 else None
-    noise, _ = librosa.load("1-11687-A-472.wav", sr=None)
+## -------- Example Usage --------
+# Example usage of augment_and_mix function
 
-    out_wav = os.path.join("trial", f"augmented_mixed_{i+1}.wav")
-    mixed_tensor, label = augment_and_mix(background, drone, noise, sr, save_path=out_wav)
-    # Ensure file is saved in "trial" folder
-    print(f"Saved: {os.path.join('trial', f'augmented_mixed_{i+1}_label{label}.wav')} (label={label})")
+if __name__ == "__main__":
+    # Load config from JSON file once
+    with open("config_default.json", "r") as f:
+        config = json.load(f)
 
-print("All good")
+    for i in range(10):
+        # Load audio files from disk before passing to augment_and_mix
+        background_path = "001_0.wav"
+        sound_paths = ["1-11687-A-472.wav", "1-137-A-320.wav", "B_S2_D1_067-bebop_001_.wav"]
+        sr = 16000
 
+        background, _ = librosa.load(background_path, sr=sr)
+        sounds = [librosa.load(p, sr=sr)[0] for p in sound_paths]
 
+        # Generate a random unique filename for each run
+        random_id = uuid.uuid4().hex[:8]
+        save_path = f"output/augmented_mixed_{random_id}_{i+1}.wav"
 
+        augment_and_mix(background, sounds, sr, config, save_path=save_path)
 
+### TESTING AUGMENTATION FUNCTIONS WITH GORILLAZ AUDIO
+        #gorillaz_path = "Gorillaz - Clint Eastwood.wav"
+        #gorillaz, sr = librosa.load(gorillaz_path, sr=16000)
+        #os.makedirs("trial", exist_ok=True)
 
+        # Test mild augmentations
+        #for i in range(3):
+        #    augmented_audio, log = apply_augmentation(gorillaz, sr, "background", config)
+        #    out_wav = os.path.join("trial", f"gorillaz_mild_{i+1}.wav")
+        #    out_txt = os.path.join("trial", f"gorillaz_mild_{i+1}_log.txt")
+        #    sf.write(out_wav, augmented_audio, sr)
+        #    with open(out_txt, 'w') as f:
+        #        f.write("Mild augmentation steps applied (in order):\n")
+        #        for step in log:
+        #            f.write(step + "\n")
+        #    print(f"Saved mild audio: {out_wav}")
+        #    print(f"Saved mild log: {out_txt}")
 
-##### TESTING AUGMENTATION FUNCTIONS WITH GORRILAZ AUDIO
-
-#gorillaz, sr = librosa.load("001_0.wav", sr=16000)
-#os.makedirs("trial", exist_ok=True)
-
-
-#for i in range(10):
-#    augmented_audio, log = apply_augmentation(gorillaz, sr, "drone")
-#    out_wav = os.path.join("trial", f"augmented_gorillaz_{i+1}.wav")
-#    out_txt = os.path.join("trial", f"augmented_gorillaz_{i+1}_log.txt")
-    
-#    sf.write(out_wav, augmented_audio, sr)
-    
-#    with open(out_txt, 'w') as f:
-#        f.write("Augmentation steps applied (in order):\n")
-#        for step in log:
-#            f.write(step + "\n")
-    
-#    print(f"Saved audio: {out_wav}")
-#    print(f"Saved log: {out_txt}")
+        # Test strong augmentations
+        #for i in range(3):
+        #    augmented_audio, log = apply_augmentation(gorillaz, sr, "sound", config)
+        #    out_wav = os.path.join("trial", f"gorillaz_strong_{i+1}.wav")
+        #    out_txt = os.path.join("trial", f"gorillaz_strong_{i+1}_log.txt")
+        #    sf.write(out_wav, augmented_audio, sr)
+        #    with open(out_txt, 'w') as f:
+        #        f.write("Strong augmentation steps applied (in order):\n")
+        #        for step in log:
+        #            f.write(step + "\n")
+        #    print(f"Saved strong audio: {out_wav}")
+        #    print(f"Saved strong log: {out_txt}")

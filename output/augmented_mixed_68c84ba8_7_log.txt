@@ -1,0 +1,12 @@
+Augmentation steps applied (in order):
+Background:
+  amplitude_clipping(clip_percent=17.75)
+  add_noise(snr_db=10.44)
+  partial_erase(erase_fraction=0.113)
+Sound (applied identically to all):
+  tanh_distortion(strength=0.09)
+  random_filter(params=custom)
+  add_noise(snr_db=6.77)
+  volume_amplify(gain_db=-4.59)
+  pitch_shift(semitones=0.31)
+  time_shift(max_shift_seconds=0.256)

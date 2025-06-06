@@ -8,17 +8,155 @@
     "hop_length": 512,
     "normalize": true
   },
-  "augmentation": {
-    "enable": true,
-    "noise_prob": 0.5,
-    "noise_level_range": [0.1, 0.5],
-    "gain_range": [0.5, 1.5],
-    "pitch_shift_prob": 0.2,
-    "pitch_shift_range": [-2, 2],
-    "time_mask_prob": 0.3,
-    "time_mask_ratio": 0.1,
-    "freq_mask_prob": 0.3,
-    "freq_mask_ratio": 0.1
+  "augmentations": {
+    "mild": {
+      "amplitude_clipping": {
+        "probability": 0.8,
+        "clip_percent": {
+          "mean": 15,
+          "std": 5,
+          "range": [5, 30]
+        }
+      },
+      "volume_amplify": {
+        "probability": 0.85,
+        "gain_db": {
+          "mean": 0,
+          "std": 1,
+          "range": [-6, 6]
+        }
+      },
+      "add_echo": {
+        "probability": 0.5,
+        "delay_ms": {
+          "mean": 40,
+          "std": 10,
+          "range": [0, 80]
+        },
+        "decay": {
+          "mean": 0.4,
+          "std": 0.1,
+          "range": [0.2, 0.7]
+        }
+      },
+      "partial_erase": {
+        "probability": 0.7,
+        "erase_fraction": {
+          "mean": 0.10,
+          "std": 0.05,
+          "range": [0.0, 0.20]
+        }
+      },
+      "add_noise": {
+        "probability": 1.0,
+        "snr_db": {
+          "mean": 20,
+          "std": 5,
+          "range": [10, 30]
+        }
+      }
+    },
+    "strong": {
+      "amplitude_clipping": {
+        "probability": 0.1,
+        "clip_percent": {
+          "mean": 20,
+          "std": 7,
+          "range": [10, 40]
+        }
+      },
+      "volume_amplify": {
+        "probability": 1.0,
+        "gain_db": {
+          "mean": -10,
+          "std": 2,
+          "range": [-20, 0]
+        }
+      },
+      "add_echo": {
+        "probability": 0.1,
+        "delay_ms": {
+          "mean": 80,
+          "std": 30,
+          "range": [30, 180]
+        },
+        "decay": {
+          "mean": 0.5,
+          "std": 0.15,
+          "range": [0.2, 0.9]
+        }
+      },
+      "partial_erase": {
+        "probability": 0.7,
+        "erase_fraction": {
+          "mean": 0.1,
+          "std": 0.02,
+          "range": [0.0, 0.2]
+        }
+      },
+      "add_noise": {
+        "probability": 1.0,
+        "snr_db": {
+          "mean": 7,
+          "std": 2,
+          "range": [0, 15]
+        }
+      },
+      "pitch_shift": {
+        "probability": 0.5,
+        "semitones": {
+          "mean": 0.0,
+          "std": 0.5,
+          "range": [-2, 2]
+        }
+      },
+      "hpss_separate": {
+        "probability": 0.1,
+        "harmonic_scale": {
+          "mean": 1.0,
+          "std": 0.2,
+          "range": [0.5, 1.5]
+        },
+        "percussive_scale": {
+          "mean": 1.0,
+          "std": 0.2,
+          "range": [0.5, 1.5]
+        }
+      },
+      "time_shift": {
+        "probability": 1.0,
+        "max_shift_seconds": {
+          "mean": 0.2,
+          "std": 0.05,
+          "range": [0.05, 0.5]
+        }
+      },
+      "tanh_distortion": {
+        "probability": 0.3,
+        "strength": {
+          "mean": 0.1,
+          "std": 0.02,
+          "range": [0.0, 0.25]
+        }
+      },
+      "random_filter": {
+        "probability": 0.5,
+        "p_apply": 0.8,
+        "high_pass": {
+          "mean": 300,
+          "std": 50,
+          "range": [250, 500]
+        },
+        "band_pass": {
+          "low_mean": 200,
+          "low_std": 50,
+          "low_range": [100, 300],
+          "bw_mean": 300,
+          "bw_std": 80,
+        "bw_range": [150, 500]
+        }
+      }
+    }
   },
   "model": {
     "model_name": "albert-base-v2",
