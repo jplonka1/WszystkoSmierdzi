@@ -6,14 +6,13 @@ from typing import List, Dict, Tuple, Optional, Union
 import numpy as np
 import torch
 import torchaudio
-import librosa
+from augmentation import augment_and_mix
 from torch.utils.data import Dataset
 from datasets import Dataset as HFDataset, Audio
 from transformers import BatchFeature
 import random
 
 from config import ExperimentConfig
-from augmentation import augment_audio
 
 logger = logging.getLogger(__name__)
 
@@ -40,41 +39,49 @@ class AudioDataset(Dataset):
     def __len__(self) -> int:
         return len(self.audio_paths)
     
+    def select_files(self):
+        selected = []
+        # 50% chance to take one random file from audio_paths
+        if random.random() < 0.5 and self.audio_paths:
+            file = random.choice(self.audio_paths)
+            selected.append(file)
+        # Select 0 to 3 random files from shared_noise_files
+        n_noise = random.randint(0, 3)
+        if self.shared_noise_files:
+            noise_files = random.sample(self.shared_noise_files, min(n_noise, len(self.shared_noise_files)))
+            selected.extend(noise_files)
+        return selected
+
+    # How is getitem used by Albert? What does it need exactly?
     def __getitem__(self, idx: int) -> Dict[str, torch.Tensor]:
-        audio_path = self.audio_paths[idx]#TODO: investigate if idx should be randomized here or why its actually giving idx at all        
-        # TODO: completely rebuild this funciton, it now is setup to not throw errors
-        print(f"something asked for {idx} item from audio dataset")
-        audio_tensor = self._load_and_process_audio(audio_path)
-        # TODO: augmentations
-        print(f"Loaded audio tensor of shape {audio_tensor.shape}")
-        label = 1 if "drone" in audio_path else 0  # placeholder
-        return {
-            'input_values': audio_tensor,
-            'labels': torch.tensor(label, dtype=torch.long)#TODO: ensure this is correct notation/syntax to prep this flag (drone or no, label 1 or 0) for model
-        }
-    
-    def _load_and_process_audio(self, audio_path: str) -> torch.Tensor:
-        """Load audio file, apply custom augmentation (librosa input, torch output), and return as torch tensor."""
         try:
-            # Load audio using librosa (returns numpy array)
-            audio_np, sr = librosa.load(audio_path, sr=self.config.audio.sample_rate, mono=True)
-            
-            ## Tutaj chyba miałam funkcję zaimportnować?
-            from augmentation import augment_audio
+            # Select files
+            selected_files = self.select_files()
+            # Always use a random background noise
+            random_background_idx = random.randint(0, len(self.shared_background_noise) - 1)
+            background_audio, background_sr = self.shared_background_noise[random_background_idx]
 
-            # Apply augment_audio for augmentation
-            if self.is_training:
-                audio_np = augment_audio(audio_np, sr, self.config)
-            
-            # Convert to torch tensor and add channel dimension
-            audio = torch.from_numpy(audio_np).float().unsqueeze(0)
-            
-            # Normalize duration and return as 1D tensor
-            audio = self._normalize_duration(audio)
-            return audio.squeeze(0)  # Remove batch dimension, return 1D audio
+            # Mix selected files with background using augment_and_mix
+            mixed_audio = augment_and_mix(
+                background_audio, selected_files, background_sr, self.config
+            )
+            # Ensure tensor shape and normalize duration
+            audio_tensor = self._normalize_duration(mixed_audio.unsqueeze(0)).squeeze(0)
 
+            # For classification, label is 1 if any event file is present, else 0
+            label = 0
+            for f in selected_files:
+                if f in self.audio_paths:
+                    label = 1
+                    break
+
+            return {
+                'input_values': audio_tensor,
+                'labels': torch.tensor(label, dtype=torch.long)
+            }
+        
         except Exception as e:
-            logger.error(f"Error processing audio {audio_path}: {e}")
+            logger.error(f"Error processing audio: {e}")
             # Return zeros as fallback
             duration = int(self.config.audio.max_duration * self.config.audio.sample_rate)
             return torch.zeros(duration)

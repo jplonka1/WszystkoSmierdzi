@@ -1,0 +1,13 @@
+Augmentation steps applied (in order):
+Background:
+  add_echo(delay_ms=51.29, decay=0.21)
+  partial_erase(erase_fraction=0.050)
+  amplitude_clipping(clip_percent=19.85)
+  add_noise(snr_db=20.65)
+Sound (applied identically to all):
+  volume_amplify(gain_db=-7.45)
+  add_noise(snr_db=4.88)
+  pitch_shift(semitones=0.55)
+  partial_erase(erase_fraction=0.115)
+  time_shift(max_shift_seconds=0.256)
+  tanh_distortion(strength=0.15)

@@ -1,0 +1,11 @@
+Augmentation steps applied (in order):
+Background:
+  add_noise(snr_db=26.30)
+  amplitude_clipping(clip_percent=20.93)
+  volume_amplify(gain_db=1.72)
+  partial_erase(erase_fraction=0.075)
+Sound (applied identically to all):
+  partial_erase(erase_fraction=0.106)
+  add_noise(snr_db=5.56)
+  volume_amplify(gain_db=-12.16)
+  time_shift(max_shift_seconds=0.122)

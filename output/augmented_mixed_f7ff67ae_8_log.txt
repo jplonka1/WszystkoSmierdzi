@@ -1,0 +1,10 @@
+Augmentation steps applied (in order):
+Background:
+  volume_amplify(gain_db=-0.27)
+  add_noise(snr_db=21.62)
+Sound (applied identically to all):
+  random_filter(params=custom)
+  volume_amplify(gain_db=-10.48)
+  hpss_separate(harmonic_scale=1.04, percussive_scale=1.12)
+  time_shift(max_shift_seconds=0.156)
+  add_noise(snr_db=7.10)
