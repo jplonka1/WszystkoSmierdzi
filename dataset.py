@@ -74,31 +74,46 @@ class AudioDataset(Dataset):
                 hop_length=getattr(self.config.audio, "hop_length", 512),
                 n_mels=getattr(self.config.audio, "n_mels", 64)
             )
-            mel_spec = mel_transform(audio_tensor)
-            mel_spec = torchaudio.functional.amplitude_to_DB(mel_spec, multiplier=10.0, amin=1e-10, db_multiplier=0.0, top_db=80.0)
+            mel_spec = mel_transform(audio_tensor)  # shape: [n_mels, time]
+            mel_spec = torchaudio.functional.amplitude_to_DB(
+                mel_spec, multiplier=10.0, amin=1e-10, db_multiplier=0.0, top_db=80.0
+            )
 
-            # For classification, label is 1 if any event file is present, else 0
+            # Normalize (optional)
+            mel_spec = (mel_spec - mel_spec.mean()) / (mel_spec.std() + 1e-6)
+
+            # Transpose for ALBERT-style input (sequence of feature vectors)
+            # shape becomes [time, n_mels]
+            input_values = mel_spec.transpose(0, 1)
+
+            # Compute attention mask (1 for real frames, 0 for padding if any)
+            attention_mask = torch.ones(input_values.shape[0], dtype=torch.long)
+
+            # Binary label
             label = 0
             for f in selected_files:
                 if f in self.audio_paths:
                     label = 1
                     break
 
+            # Notes on output on DISCORD
             return {
-                'input_values': mel_spec,  # shape: [n_mels, time]
+                'input_values': input_values,  # shape: [seq_len, feature_dim]
+                'attention_mask': attention_mask,  # shape: [seq_len]
                 'labels': torch.tensor(label, dtype=torch.long)
             }
-        
+
         except Exception as e:
             logger.error(f"Error processing audio: {e}")
-            # Return zeros as fallback
             n_mels = getattr(self.config.audio, "n_mels", 64)
             duration = int(self.config.audio.max_duration * self.config.audio.sample_rate)
             n_frames = duration // getattr(self.config.audio, "hop_length", 512)
             return {
-                'input_values': torch.zeros(n_mels, n_frames),
+                'input_values': torch.zeros(n_frames, n_mels),  # still [seq_len, feature_dim]
+                'attention_mask': torch.zeros(n_frames, dtype=torch.long),
                 'labels': torch.tensor(0, dtype=torch.long)
             }
+
     
     def _normalize_duration(self, audio: torch.Tensor) -> torch.Tensor:
         """Normalize audio duration to fixed length."""
